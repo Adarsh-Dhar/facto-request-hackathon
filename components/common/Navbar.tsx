@@ -26,6 +26,14 @@ const Navbar = () => {
       name: "Create an Invoice",
       href: "/create-invoice",
     },
+    {
+      name: "Sell Invoice",
+      href: "/sell-invoice",
+    },
+    {
+      name: "Buy Invoice",
+      href: "/buy-invoice",
+    },
   ];
 
   const supportLinks = [
