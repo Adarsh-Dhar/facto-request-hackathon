@@ -1,104 +1,201 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {ERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-import {ReentrancyGuard} from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {ERC721} from "../lib/openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+// import "@openzeppelin/contracts/access/Ownable.sol";
 
+contract InvoiceNFTMarketplace is ERC721 {
+    // Replace Counters with a native uint256 for tracking token IDs
+    uint256 private _nextTokenId = 1;
 
-// Aave V3 Pool Interface
-interface IAavePool {
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
-    function withdraw(address asset, uint256 amount, address to) external returns (uint256);
-}
-
-contract AaveYieldStaking is ReentrancyGuard {
-    // Aave V3 Pool Address (this is the Ethereum mainnet address, change for other networks)
-    IAavePool public constant AAVE_POOL = IAavePool(0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2);
-
-    // Token to be staked
-    IERC20 public stakingToken;
-
-    // Address to receive yields
-    address public yieldRecipient;
-
-    // Struct to track user stakes
-    struct StakeInfo {
+    // Struct to represent an invoice
+    struct Invoice {
         uint256 amount;
-        uint256 stakedAt;
+        uint256 deadline;
+        address originalOwner;
+        uint256 creationDate;
+        bool isListed;
+        uint256 listingStartTime;
     }
 
-    // User stakes
-    mapping(address => StakeInfo) public stakes;
-
-    // Events
-    event Staked(address indexed user, uint256 amount);
-    event Unstaked(address indexed user, uint256 amount);
-    event YieldRecipientUpdated(address newRecipient);
-
-    constructor(address _stakingToken, address _yieldRecipient) {
-        stakingToken = IERC20(_stakingToken);
-        yieldRecipient = _yieldRecipient;
+    // Struct to represent a bid
+    struct Bid {
+        address bidder;
+        uint256 bidAmount;
+        uint256 bidTime;
     }
 
-    // Stake tokens in Aave
-    function stake(uint256 amount) external nonReentrant {
-        // Ensure user hasn't already staked
-        require(stakes[msg.sender].amount == 0, "Already staked");
+    // Mapping of token ID to Invoice details
+    mapping(uint256 => Invoice) public invoices;
+
+    // Mapping of token ID to current bids
+    mapping(uint256 => Bid[]) public tokenBids;
+
+    // Mapping to track if a token is currently in auction
+    mapping(uint256 => bool) public isInAuction;
+
+    // Event declarations
+    event InvoiceCreated(uint256 indexed tokenId, address indexed owner, uint256 amount, uint256 deadline);
+    event InvoiceListed(uint256 indexed tokenId, uint256 listingTime);
+    event BidPlaced(uint256 indexed tokenId, address indexed bidder, uint256 bidAmount);
+    event AuctionEnded(uint256 indexed tokenId, address winner, uint256 winningBid);
+    event OwnershipTransferRequested(uint256 indexed tokenId, address newOwner);
+    event OwnershipTransferAccepted(uint256 indexed tokenId, address newOwner);
+    event OwnershipTransferRejected(uint256 indexed tokenId);
+
+    constructor() ERC721("InvoiceNFT", "INVNFT") {
         
-        // Transfer tokens from user to contract
-        require(stakingToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
-        
-        // Approve Aave pool to spend tokens
-        require(stakingToken.approve(address(AAVE_POOL), amount), "Approval failed");
-        
-        // Supply tokens to Aave pool
-        AAVE_POOL.supply(address(stakingToken), amount, address(this), 0);
-        
-        // Record stake
-        stakes[msg.sender] = StakeInfo({
+    }
+
+    // Function to create a new Invoice NFT
+    function createInvoiceNFT(
+        uint256 amount, 
+        uint256 deadline
+    ) public returns (uint256) {
+        // Use the current _nextTokenId and then increment
+        uint256 newTokenId = _nextTokenId;
+        _nextTokenId++;
+
+        // Mint the NFT to the creator
+        _safeMint(msg.sender, newTokenId);
+
+        // Store invoice details
+        invoices[newTokenId] = Invoice({
             amount: amount,
-            stakedAt: block.timestamp
+            deadline: deadline,
+            originalOwner: msg.sender,
+            creationDate: block.timestamp,
+            isListed: false,
+            listingStartTime: 0
         });
 
-        emit Staked(msg.sender, amount);
+        emit InvoiceCreated(newTokenId, msg.sender, amount, deadline);
+
+        return newTokenId;
     }
 
-    // Unstake tokens from Aave
-    function unstake() external nonReentrant {
-        StakeInfo memory userStake = stakes[msg.sender];
-        require(userStake.amount > 0, "No active stake");
+    // Function to list an invoice for auction
+    function listInvoiceForAuction(uint256 tokenId) public {
+        // Ensure the caller is the owner of the token
+        require(ownerOf(tokenId) == msg.sender, "Only token owner can list");
+        require(!isInAuction[tokenId], "Invoice is already in auction");
 
-        // Withdraw from Aave pool
-        uint256 withdrawnAmount = AAVE_POOL.withdraw(address(stakingToken), userStake.amount, address(this));
+        // Mark the invoice as listed
+        invoices[tokenId].isListed = true;
+        invoices[tokenId].listingStartTime = block.timestamp;
+        isInAuction[tokenId] = true;
+
+        // Clear previous bids
+        delete tokenBids[tokenId];
+
+        emit InvoiceListed(tokenId, block.timestamp);
+    }
+
+    // Function to place a bid on an invoice
+    function bidOnInvoice(uint256 tokenId) public payable {
+        Invoice storage invoice = invoices[tokenId];
         
-        // Transfer original amount back to user
-        require(stakingToken.transfer(msg.sender, withdrawnAmount), "Transfer back failed");
+        // Check if the invoice is currently listed
+        require(invoice.isListed, "Invoice is not for sale");
+        require(block.timestamp < invoice.listingStartTime + 24 hours, "Auction has ended");
+
+        // Create a new bid
+        Bid memory newBid = Bid({
+            bidder: msg.sender,
+            bidAmount: msg.value,
+            bidTime: block.timestamp
+        });
+
+        tokenBids[tokenId].push(newBid);
+
+        emit BidPlaced(tokenId, msg.sender, msg.value);
+    }
+
+    // Function to end the auction and determine the winner
+    function endAuction(uint256 tokenId) public {
+        Invoice storage invoice = invoices[tokenId];
         
-        // Clear stake
-        delete stakes[msg.sender];
+        // Check if auction time has passed
+        require(block.timestamp >= invoice.listingStartTime + 24 hours, "Auction not yet ended");
+        require(invoice.isListed, "Invoice is not listed");
 
-        emit Unstaked(msg.sender, withdrawnAmount);
+        // Find the highest bid
+        Bid memory winningBid = _determineWinner(tokenId);
+
+        // Mark auction as ended
+        invoice.isListed = false;
+        isInAuction[tokenId] = false;
+
+        // Request ownership transfer
+        emit OwnershipTransferRequested(tokenId, winningBid.bidder);
     }
 
-    // Withdraw accumulated yields (can only be called by owner)
-    function withdrawYields() external  {
-        // Calculate yields by checking contract's token balance 
-        uint256 contractBalance = stakingToken.balanceOf(address(this));
-        uint256 userStakedAmount = stakes[msg.sender].amount;
-        uint256 yields = contractBalance - userStakedAmount;
+    // Internal function to determine the winner
+    function _determineWinner(uint256 tokenId) internal view returns (Bid memory) {
+        Bid[] memory bids = tokenBids[tokenId];
+        require(bids.length > 0, "No bids placed");
 
-        // Transfer yields to yield recipient
-        require(stakingToken.transfer(yieldRecipient, yields), "Yield transfer failed");
+        Bid memory winningBid = bids[0];
+
+        // Find the highest bid
+        for (uint256 i = 1; i < bids.length; i++) {
+            if (bids[i].bidAmount > winningBid.bidAmount || 
+                (bids[i].bidAmount == winningBid.bidAmount && bids[i].bidTime < winningBid.bidTime)) {
+                winningBid = bids[i];
+            }
+        }
+
+        return winningBid;
     }
 
-    // Update yield recipient
-    function updateYieldRecipient(address _newRecipient) external  {
-        require(_newRecipient != address(0), "Invalid recipient");
-        yieldRecipient = _newRecipient;
-        emit YieldRecipientUpdated(_newRecipient);
+    // Function for the owner to accept or reject ownership transfer
+    function handleOwnershipTransfer(uint256 tokenId, bool accept) public {
+        Invoice storage invoice = invoices[tokenId];
+        
+        require(msg.sender == ownerOf(tokenId), "Only current owner can handle transfer");
+
+        if (accept) {
+            // Determine the winner
+            Bid memory winningBid = _determineWinner(tokenId);
+
+            // Transfer the token
+            _transfer(msg.sender, winningBid.bidder, tokenId);
+
+            // Refund other bidders
+            _refundOtherBidders(tokenId, winningBid.bidder);
+
+            emit OwnershipTransferAccepted(tokenId, winningBid.bidder);
+        } else {
+            // Relist the invoice for another 24 hours
+            listInvoiceForAuction(tokenId);
+            emit OwnershipTransferRejected(tokenId);
+        }
     }
 
-    // Fallback function
-    receive() external payable {}
+    // Internal function to refund other bidders
+    function _refundOtherBidders(uint256 tokenId, address winner) internal {
+        Bid[] memory bids = tokenBids[tokenId];
+        
+        for (uint256 i = 0; i < bids.length; i++) {
+            if (bids[i].bidder != winner) {
+                payable(bids[i].bidder).transfer(bids[i].bidAmount);
+            }
+        }
+    }
+
+    // Function to get all NFTs
+    function getAllInvoiceNFTs() public view returns (Invoice[] memory) {
+        Invoice[] memory allInvoices = new Invoice[](_nextTokenId - 1);
+        
+        for (uint256 i = 1; i < _nextTokenId; i++) {
+            allInvoices[i-1] = invoices[i];
+        }
+        
+        return allInvoices;
+    }
+
+    // Function to get bids for a specific token
+    function getBidsForToken(uint256 tokenId) public view returns (Bid[] memory) {
+        return tokenBids[tokenId];
+    }
 }
