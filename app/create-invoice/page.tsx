@@ -7,7 +7,6 @@ import { WagmiProvider } from "wagmi";
 import { rainbowKitConfig } from "@/utils/wagmiConfig";
 import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
 import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
-import { Navbar } from "@/components/common";
 
 export default function Home() {
   const queryClient = new QueryClient();
@@ -17,7 +16,6 @@ export default function Home() {
         <QueryClientProvider client={queryClient}>
           <RainbowKitProvider>
             <Provider>
-              <Navbar />
               <CreateInvoice />
             </Provider>
           </RainbowKitProvider>
