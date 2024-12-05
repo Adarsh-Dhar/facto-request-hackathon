@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image";
-import CreateInvoice from "@/components/create-invoice";
+import InvoiceDashboardPage from "@/components/invoice-dashboard";
 import { Provider } from "@/utils/context";
 import { WagmiProvider } from "wagmi";
 import { rainbowKitConfig } from "@/utils/wagmiConfig";
@@ -18,7 +18,7 @@ export default function Home() {
           <RainbowKitProvider>
             <Provider>
               <Navbar />
-              <CreateInvoice />
+              <InvoiceDashboardPage />
             </Provider>
           </RainbowKitProvider>
         </QueryClientProvider>
