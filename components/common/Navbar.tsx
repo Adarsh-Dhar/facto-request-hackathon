@@ -66,12 +66,6 @@ const Navbar = () => {
         {links.map((link, index) => (
           <li className={`h-full relative text-black`} key={index}>
             <Link href={link.href}>{link.name}</Link>
-            <div
-              className={`${
-                router.pathname === link.href &&
-                "h-[4px] bg-green w-full absolute bottom-[-28px]"
-              }`}
-            ></div>
           </li>
         ))}
       </ul>
@@ -127,10 +121,6 @@ const Navbar = () => {
             {links.map((link, index) => (
               <li key={index}>
                 <Link
-                  className={`w-[80%] block h-[30px] ${
-                    router.pathname === link.href &&
-                    "border-b-[1px] border-solid border-green"
-                  }`}
                   href={link.href}
                   onClick={() => setIsMobileMenuOpen(false)}
                 >
