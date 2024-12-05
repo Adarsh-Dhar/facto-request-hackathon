@@ -1,3 +1,4 @@
+"use client"
 import Head from "next/head";
 import dynamic from "next/dynamic";
 import { config } from "@/utils/config";
