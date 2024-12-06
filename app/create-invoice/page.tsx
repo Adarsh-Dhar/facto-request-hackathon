@@ -1,27 +1,32 @@
-"use client"
+"use client";
 
-import Image from "next/image";
-import CreateInvoice from "@/components/create-invoice";
-import { Provider } from "@/utils/context";
-import { WagmiProvider } from "wagmi";
-import { rainbowKitConfig } from "@/utils/wagmiConfig";
-import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
-import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import Head from "next/head";
+import dynamic from "next/dynamic";
+import { config } from "@/lib/config";
+import { useAppContext } from "@/lib/context";
+import { currencies } from "@/lib/currencies";
+import { rainbowKitConfig as wagmiConfig } from "@/lib/wagmiConfig";
+import Spinner from "@/components/ui/Spinner";
+import type { CurrencyTypes } from "@requestnetwork/types";
 
-export default function Home() {
-  const queryClient = new QueryClient();
+const CreateInvoiceForm = dynamic(() => import("@requestnetwork/create-invoice-form/react"), { ssr: false, loading: () => <Spinner /> });
+
+export default function CreateInvoice() {
+  const { requestNetwork } = useAppContext();
+
   return (
-   <div>
-     <WagmiProvider config={rainbowKitConfig}>
-        <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider>
-            <Provider>
-              <CreateInvoice />
-            </Provider>
-          </RainbowKitProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-
-   </div>
+    <>
+      <Head>
+        <title>Request Invoicing - Create an Invoice</title>
+      </Head>
+      <div className="container m-auto  w-[100%] mt-32">
+        <CreateInvoiceForm
+          config={config}
+          currencies={currencies as CurrencyTypes.CurrencyInput[]}
+          wagmiConfig={wagmiConfig}
+          requestNetwork={requestNetwork}
+        />
+      </div>
+    </>
   );
 }
